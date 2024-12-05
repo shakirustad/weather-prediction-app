@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weather Prediction Dashboard</title>
+  </head>
+  <body>
+    <h1>Weather Prediction Dashboard</h1>
+    <form method="post">
+      <label>Latitude:</label>
+      <input type="text" name="latitude" required /><br /><br />
+
+      <label>Longitude:</label>
+      <input type="text" name="longitude" required /><br /><br />
+
+      <label>Start Date (YYYY-MM-DD):</label>
+      <input type="date" name="start_date" required /><br /><br />
+
+      <label>End Date (YYYY-MM-DD):</label>
+      <input type="date" name="end_date" required /><br /><br />
+
+      <button type="submit">Predict</button>
+    </form>
+
+    {% if error %}
+    <p style="color: red">Error: {{ error }}</p>
+    {% endif %} {% if forecast_plot %}
+    <h2>Forecast Results</h2>
+    <div>{{ forecast_plot | safe }}</div>
+    {% endif %}
+  </body>
+</html>
