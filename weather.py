@@ -136,16 +136,18 @@ def get_date_range():
     return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
 
 @app.route("/", methods=["GET", "POST"])
+# @app.route("/", methods=["GET", "POST"])
 def index():
     forecast_plot = None
     error = None
     weather_data = None
+    locations = list(KENYA_LOCATIONS.keys())  # Always get locations
     
     if request.method == "POST":
         location = request.form.get('location')
         if not location or location not in KENYA_LOCATIONS:
             error = "Please select a valid location"
-            return render_template("index.html", error=error, locations=KENYA_LOCATIONS.keys())
+            return render_template("index.html", error=error, locations=locations)
             
         coords = KENYA_LOCATIONS[location]
         start_date, end_date = get_date_range()
@@ -179,9 +181,8 @@ def index():
         "index.html",
         forecast_plot=forecast_plot,
         error=error,
-        locations=KENYA_LOCATIONS.keys(),
+        locations=locations,  # Always pass locations
         weather_data=weather_data
     )
-
 if __name__ == "__main__":
     app.run(debug=True)
