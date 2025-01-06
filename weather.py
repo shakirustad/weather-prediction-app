@@ -13,13 +13,8 @@ app = Flask(__name__)
 
 class WeatherPredictor:
     def __init__(self):
-        self.model = Prophet(
-            yearly_seasonality=True,
-            weekly_seasonality=True,
-            daily_seasonality=True,
-            seasonality_mode='multiplicative'
-        )
-        
+        pass  # No persistent `Prophet` object, instantiate a new one for every call
+    
     def fetch_weather_data(self, latitude, longitude, start_date, end_date):
         """Fetch historical weather data from Open-Meteo API"""
         url = "https://archive-api.open-meteo.com/v1/archive"
@@ -59,7 +54,7 @@ class WeatherPredictor:
             if df.empty:
                 raise ValueError("No data available for training")
             
-            # Create a new Prophet instance for each training
+            # Instantiate a new Prophet object here
             model = Prophet(
                 yearly_seasonality=True,
                 weekly_seasonality=True,
@@ -74,7 +69,6 @@ class WeatherPredictor:
             return forecast, None
         except Exception as e:
             return None, f"Failed to generate forecast: {str(e)}"
-    
 
     def create_forecast_plot(self, forecast, location_name="Selected Location"):
         """Create an interactive forecast plot"""
@@ -125,7 +119,8 @@ class WeatherPredictor:
             
             return pio.to_html(fig, full_html=False)
         except Exception as e:
-            return None
+            return None, f"Failed to create forecast plot: {str(e)}"
+
 
 # Initialize the predictor
 predictor = WeatherPredictor()
