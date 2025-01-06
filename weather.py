@@ -37,7 +37,9 @@ class WeatherPredictor:
             response.raise_for_status()
             data = response.json()
             
-            # Create DataFrame with all weather parameters
+            if not data.get('daily'):
+                raise ValueError("No data received from weather API")
+                
             df = pd.DataFrame({
                 'ds': pd.to_datetime(data['daily']['time']),
                 'y': data['daily']['temperature_2m_max'],
@@ -46,77 +48,80 @@ class WeatherPredictor:
             })
             
             return df, None
+        except requests.RequestException as e:
+            return None, f"Failed to fetch weather data: {str(e)}"
         except Exception as e:
             return None, str(e)
 
     def train_and_predict(self, df, forecast_days=30):
         """Train model and generate predictions"""
         try:
-            # Fit the model
+            if df.empty:
+                raise ValueError("No data available for training")
+                
             self.model.fit(df[['ds', 'y']])
-            
-            # Create future dates
             future = self.model.make_future_dataframe(periods=forecast_days)
-            
-            # Generate forecast
             forecast = self.model.predict(future)
             
             return forecast, None
         except Exception as e:
-            return None, str(e)
+            return None, f"Failed to generate forecast: {str(e)}"
 
     def create_forecast_plot(self, forecast, location_name="Selected Location"):
         """Create an interactive forecast plot"""
-        fig = go.Figure()
+        try:
+            fig = go.Figure()
 
-        # Historical data
-        fig.add_trace(go.Scatter(
-            x=forecast['ds'][:len(forecast)-30],
-            y=forecast['yhat'][:len(forecast)-30],
-            name='Historical',
-            line=dict(color='blue')
-        ))
+            historical_end = len(forecast) - 30
+            
+            fig.add_trace(go.Scatter(
+                x=forecast['ds'][:historical_end],
+                y=forecast['yhat'][:historical_end],
+                name='Historical',
+                line=dict(color='blue')
+            ))
 
-        # Forecast
-        fig.add_trace(go.Scatter(
-            x=forecast['ds'][-30:],
-            y=forecast['yhat'][-30:],
-            name='Forecast',
-            line=dict(color='red')
-        ))
+            fig.add_trace(go.Scatter(
+                x=forecast['ds'][-30:],
+                y=forecast['yhat'][-30:],
+                name='Forecast',
+                line=dict(color='red')
+            ))
 
-        # Confidence interval
-        fig.add_trace(go.Scatter(
-            x=forecast['ds'][-30:],
-            y=forecast['yhat_upper'][-30:],
-            fill=None,
-            mode='lines',
-            line_color='rgba(255,0,0,0.2)',
-            showlegend=False
-        ))
-        fig.add_trace(go.Scatter(
-            x=forecast['ds'][-30:],
-            y=forecast['yhat_lower'][-30:],
-            fill='tonexty',
-            mode='lines',
-            line_color='rgba(255,0,0,0.2)',
-            name='95% Confidence Interval'
-        ))
+            fig.add_trace(go.Scatter(
+                x=forecast['ds'][-30:],
+                y=forecast['yhat_upper'][-30:],
+                fill=None,
+                mode='lines',
+                line_color='rgba(255,0,0,0.2)',
+                showlegend=False
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=forecast['ds'][-30:],
+                y=forecast['yhat_lower'][-30:],
+                fill='tonexty',
+                mode='lines',
+                line_color='rgba(255,0,0,0.2)',
+                name='95% Confidence Interval'
+            ))
 
-        fig.update_layout(
-            title=f'Temperature Forecast for {location_name}',
-            xaxis_title='Date',
-            yaxis_title='Temperature (°C)',
-            hovermode='x unified',
-            template='plotly_white'
-        )
-        
-        return pio.to_html(fig, full_html=False)
+            fig.update_layout(
+                title=f'Temperature Forecast for {location_name}',
+                xaxis_title='Date',
+                yaxis_title='Temperature (°C)',
+                hovermode='x unified',
+                template='plotly_white'
+            )
+            
+            return pio.to_html(fig, full_html=False)
+        except Exception as e:
+            return None
 
 # Initialize the predictor
 predictor = WeatherPredictor()
 
-# Kenya locations dictionary
+# Kenya locations dictionary with more accurate coordinates
 KENYA_LOCATIONS = {
     "Nairobi": {"lat": -1.2921, "lon": 36.8219},
     "Mombasa": {"lat": -4.0435, "lon": 39.6682},
@@ -125,6 +130,11 @@ KENYA_LOCATIONS = {
     "Eldoret": {"lat": 0.5143, "lon": 35.2698}
 }
 
+def get_date_range():
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=365)
+    return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     forecast_plot = None
@@ -132,47 +142,38 @@ def index():
     weather_data = None
     
     if request.method == "POST":
-        try:
-            # Get location from form
-            location = request.form.get('location', 'Nairobi')
-            coords = KENYA_LOCATIONS.get(location)
+        location = request.form.get('location')
+        if not location or location not in KENYA_LOCATIONS:
+            error = "Please select a valid location"
+            return render_template("index.html", error=error, locations=KENYA_LOCATIONS.keys())
             
-            if not coords:
-                raise ValueError("Invalid location selected")
-                
-            # Calculate dates
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+        coords = KENYA_LOCATIONS[location]
+        start_date, end_date = get_date_range()
+        
+        df, fetch_error = predictor.fetch_weather_data(
+            coords['lat'], 
+            coords['lon'], 
+            start_date, 
+            end_date
+        )
+        
+        if fetch_error:
+            error = fetch_error
+        else:
+            forecast, predict_error = predictor.train_and_predict(df)
             
-            # Fetch and process data
-            df, error = predictor.fetch_weather_data(
-                coords['lat'], 
-                coords['lon'], 
-                start_date, 
-                end_date
-            )
-            
-            if error:
-                raise Exception(error)
-                
-            # Generate forecast
-            forecast, error = predictor.train_and_predict(df)
-            
-            if error:
-                raise Exception(error)
-                
-            # Create plot
-            forecast_plot = predictor.create_forecast_plot(forecast, location)
-            
-            # Prepare current weather data
-            weather_data = {
-                'current_temp': forecast['yhat'].iloc[-1],
-                'temp_trend': 'rising' if forecast['yhat'].diff().tail(7).mean() > 0 else 'falling',
-                'confidence': forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]
-            }
-            
-        except Exception as e:
-            error = str(e)
+            if predict_error:
+                error = predict_error
+            else:
+                forecast_plot = predictor.create_forecast_plot(forecast, location)
+                if forecast_plot is None:
+                    error = "Failed to generate forecast plot"
+                else:
+                    weather_data = {
+                        'current_temp': float(forecast['yhat'].iloc[-1]),
+                        'temp_trend': 'rising' if forecast['yhat'].diff().tail(7).mean() > 0 else 'falling',
+                        'confidence': float(forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1])
+                    }
     
     return render_template(
         "index.html",
@@ -181,45 +182,6 @@ def index():
         locations=KENYA_LOCATIONS.keys(),
         weather_data=weather_data
     )
-
-@app.route("/api/forecast/<location>")
-def api_forecast(location):
-    """API endpoint for getting forecast data"""
-    try:
-        if location not in KENYA_LOCATIONS:
-            return jsonify({"error": "Invalid location"}), 400
-            
-        coords = KENYA_LOCATIONS[location]
-        end_date = datetime.now().strftime('%Y-%m-%d')
-        start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
-        
-        df, error = predictor.fetch_weather_data(
-            coords['lat'],
-            coords['lon'],
-            start_date,
-            end_date
-        )
-        
-        if error:
-            return jsonify({"error": error}), 500
-            
-        forecast, error = predictor.train_and_predict(df)
-        
-        if error:
-            return jsonify({"error": error}), 500
-            
-        # Convert forecast to JSON-serializable format
-        forecast_data = {
-            'dates': forecast['ds'].tail(30).dt.strftime('%Y-%m-%d').tolist(),
-            'temperatures': forecast['yhat'].tail(30).round(1).tolist(),
-            'upper_bound': forecast['yhat_upper'].tail(30).round(1).tolist(),
-            'lower_bound': forecast['yhat_lower'].tail(30).round(1).tolist()
-        }
-        
-        return jsonify(forecast_data)
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
