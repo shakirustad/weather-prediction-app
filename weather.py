@@ -58,14 +58,23 @@ class WeatherPredictor:
         try:
             if df.empty:
                 raise ValueError("No data available for training")
-                
-            self.model.fit(df[['ds', 'y']])
-            future = self.model.make_future_dataframe(periods=forecast_days)
-            forecast = self.model.predict(future)
+            
+            # Create a new Prophet instance for each training
+            model = Prophet(
+                yearly_seasonality=True,
+                weekly_seasonality=True,
+                daily_seasonality=True,
+                seasonality_mode='multiplicative'
+            )
+            
+            model.fit(df[['ds', 'y']])
+            future = model.make_future_dataframe(periods=forecast_days)
+            forecast = model.predict(future)
             
             return forecast, None
         except Exception as e:
             return None, f"Failed to generate forecast: {str(e)}"
+    
 
     def create_forecast_plot(self, forecast, location_name="Selected Location"):
         """Create an interactive forecast plot"""
